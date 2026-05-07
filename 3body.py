@@ -24,6 +24,7 @@ need to experiment and adjust them manually.
 """
 
 import json
+import random
 import numpy as np
 from vispy import app, gloo
 from vispy.gloo import gl as _vispy_gl
@@ -54,11 +55,10 @@ def _set_uniform_array_fix(self, name, type_, value):
 
 _GlirProgram.set_uniform = _set_uniform_array_fix
 
-resolution = (1000, 1000)
+resolution = (500, 500)
 G = m1 = m2 = m3 = 1.0
-dt = 0.02
+dt = 0.005
 trail_length = 100
-name = "figure 8"
 
 
 def calc_accel(t, y):
@@ -75,6 +75,10 @@ def calc_accel(t, y):
 
 with open("init_conditions.json", encoding="utf-8") as f:
     init_conditions = json.load(f)
+
+name = random.choice(list(init_conditions.keys()))
+# name = "Dragonfly"
+print(f"Orbit: {name}")
 
 T = init_conditions[name]["period"]
 y0 = np.concatenate(
