@@ -4,7 +4,8 @@
 
 const VISUAL_PERIOD_S = 8.0;     // every orbit completes one period in this many seconds
 const FADE_TAU = 1.6;            // 1/s — per-second decay rate of the trail (lower = longer trails)
-const FBO_SIZE = 720;            // square trail accumulator, fixed regardless of canvas
+const FBO_SHORT = 720;           // shorter FBO axis — orbit is sized to this; longer axis scales with viewport aspect
+const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blow up GPU cost
 const FRAMING_MARGIN = 0.05;     // 5% breathing room around the orbit's bounding box
 
 const COLORS = new Float32Array([
@@ -55,13 +56,13 @@ uniform vec2 uPos[3];
 uniform vec3 uColor[3];
 uniform float uLum[3];
 uniform vec2 uCenter;
-uniform float uWorldHalfSize;
+uniform vec2 uWorldExtent;       // half-extent of the FBO's view in world units (per-axis)
 uniform float uNucleus;
 uniform float uHalo;
 out vec4 fragColor;
 void main() {
   vec3 c = texture(uFbo, vUv).rgb;
-  vec2 worldPos = uCenter + (vUv * 2.0 - 1.0) * uWorldHalfSize;
+  vec2 worldPos = uCenter + (vUv * 2.0 - 1.0) * uWorldExtent;
   for (int i = 0; i < 3; i++) {
     float d = max(distance(worldPos, uPos[i]), 1e-5);
     float core = pow(uNucleus / d, 2.0) / uLum[i];   // tight pinpoint
@@ -153,10 +154,10 @@ function program(gl, vsSrc, fsSrc) {
   return p;
 }
 
-function makeFbo(gl, size) {
+function makeFbo(gl, w, h) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, size, size, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -169,7 +170,22 @@ function makeFbo(gl, size) {
   }
   gl.clearColor(0, 0, 0, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
-  return { tex, fbo };
+  return { tex, fbo, w, h };
+}
+
+function disposeFbo(gl, fbo) {
+  gl.deleteFramebuffer(fbo.fbo);
+  gl.deleteTexture(fbo.tex);
+}
+
+// Choose FBO dimensions: shorter axis fixed at FBO_SHORT, longer scales with
+// canvas aspect, capped at FBO_LONG_MAX so extreme aspects don't tank perf.
+function fboDimsForAspect(aspect) {
+  if (aspect >= 1) {
+    return { w: Math.min(FBO_LONG_MAX, Math.round(FBO_SHORT * aspect)), h: FBO_SHORT };
+  } else {
+    return { w: FBO_SHORT, h: Math.min(FBO_LONG_MAX, Math.round(FBO_SHORT / aspect)) };
+  }
 }
 
 async function main() {
@@ -218,23 +234,43 @@ async function main() {
   gl.vertexAttribPointer(aPosLocSeg, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
-  let fboFront = makeFbo(gl, FBO_SIZE);
-  let fboBack = makeFbo(gl, FBO_SIZE);
+  let fboFront = null;
+  let fboBack = null;
 
   // ---- Camera (world → clip)
   const worldHalfSize = Math.max(orbit.extent[0], orbit.extent[1]) * (1 + FRAMING_MARGIN);
-  const proj = new Float32Array([
-    1.0 / worldHalfSize,
-    1.0 / worldHalfSize,
-    -orbit.center[0] / worldHalfSize,
-    -orbit.center[1] / worldHalfSize,
-  ]);
+  const proj = new Float32Array(4);
+  const worldExtent = new Float32Array(2);
 
   // Sizing scales with the orbit so visual thickness is constant across orbits.
   const TRAIL_RADIUS    = worldHalfSize * 0.15;   // bounding capsule — far enough out that emission has faded by the edge
   const TRAIL_STRENGTH  = worldHalfSize * 0.005;
   const HEAD_NUCLEUS    = worldHalfSize * 0.012;  // tight bright pinpoint
   const HEAD_HALO       = worldHalfSize * 0.10;   // 1/r^2 sun-like glow that decays into the void
+
+  // Recompute camera + world extent so the orbit fits the shorter FBO axis
+  // and halos extend naturally into the longer axis.
+  function updateCamera(fboW, fboH) {
+    const aspect = fboW / fboH;
+    let scaleX, scaleY, extX, extY;
+    if (aspect >= 1) {
+      scaleY = 1 / worldHalfSize;
+      scaleX = scaleY / aspect;
+      extX = worldHalfSize * aspect;
+      extY = worldHalfSize;
+    } else {
+      scaleX = 1 / worldHalfSize;
+      scaleY = scaleX * aspect;
+      extX = worldHalfSize;
+      extY = worldHalfSize / aspect;
+    }
+    proj[0] = scaleX;
+    proj[1] = scaleY;
+    proj[2] = -orbit.center[0] * scaleX;
+    proj[3] = -orbit.center[1] * scaleY;
+    worldExtent[0] = extX;
+    worldExtent[1] = extY;
+  }
 
   // ---- Per-frame state
   const prevPos = new Float32Array(6);
@@ -282,32 +318,45 @@ async function main() {
     uColor: gl.getUniformLocation(presentProg, 'uColor[0]'),
     uLum: gl.getUniformLocation(presentProg, 'uLum[0]'),
     uCenter: gl.getUniformLocation(presentProg, 'uCenter'),
-    uWorldHalfSize: gl.getUniformLocation(presentProg, 'uWorldHalfSize'),
+    uWorldExtent: gl.getUniformLocation(presentProg, 'uWorldExtent'),
     uNucleus: gl.getUniformLocation(presentProg, 'uNucleus'),
     uHalo: gl.getUniformLocation(presentProg, 'uHalo'),
   };
 
-  // Bind once: shared static uniforms.
+  // Bind once: shared static uniforms (per-resize camera bindings handled below).
   gl.useProgram(segmentProg);
   gl.uniform3fv(segUniforms.uColor, COLORS);
   gl.uniform1fv(segUniforms.uLum, LUMS);
-  gl.uniform4fv(segUniforms.uProj, proj);
 
   gl.useProgram(presentProg);
   gl.uniform3fv(presentUniforms.uColor, COLORS);
   gl.uniform1fv(presentUniforms.uLum, LUMS);
   gl.uniform2f(presentUniforms.uCenter, orbit.center[0], orbit.center[1]);
-  gl.uniform1f(presentUniforms.uWorldHalfSize, worldHalfSize);
   gl.uniform1f(presentUniforms.uNucleus, HEAD_NUCLEUS);
   gl.uniform1f(presentUniforms.uHalo, HEAD_HALO);
 
-  // ---- Resize: only the canvas backing-store and present viewport.
+  // ---- Resize: canvas backing-store + FBO dimensions + camera projection.
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = Math.max(1, Math.floor(window.innerWidth * dpr));
-    const h = Math.max(1, Math.floor(window.innerHeight * dpr));
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
+    const cw = Math.max(1, Math.floor(window.innerWidth * dpr));
+    const ch = Math.max(1, Math.floor(window.innerHeight * dpr));
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== ch) canvas.height = ch;
+
+    const aspect = cw / ch;
+    const dims = fboDimsForAspect(aspect);
+    if (!fboFront || fboFront.w !== dims.w || fboFront.h !== dims.h) {
+      if (fboFront) disposeFbo(gl, fboFront);
+      if (fboBack) disposeFbo(gl, fboBack);
+      fboFront = makeFbo(gl, dims.w, dims.h);
+      fboBack = makeFbo(gl, dims.w, dims.h);
+    }
+    updateCamera(dims.w, dims.h);
+
+    gl.useProgram(segmentProg);
+    gl.uniform4fv(segUniforms.uProj, proj);
+    gl.useProgram(presentProg);
+    gl.uniform2fv(presentUniforms.uWorldExtent, worldExtent);
   }
   resize();
   window.addEventListener('resize', resize);
@@ -338,14 +387,14 @@ async function main() {
 
     // 1. Fade + diffusion pass: fboFront × uFade (with cross blur) → fboBack
     gl.bindFramebuffer(gl.FRAMEBUFFER, fboBack.fbo);
-    gl.viewport(0, 0, FBO_SIZE, FBO_SIZE);
+    gl.viewport(0, 0, fboBack.w, fboBack.h);
     gl.disable(gl.BLEND);
     gl.useProgram(fadeProg);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, fboFront.tex);
     gl.uniform1i(fadeUniforms.uPrev, 0);
     gl.uniform1f(fadeUniforms.uFade, Math.exp(-FADE_TAU * dtSec));
-    gl.uniform2f(fadeUniforms.uTexel, 1 / FBO_SIZE, 1 / FBO_SIZE);
+    gl.uniform2f(fadeUniforms.uTexel, 1 / fboBack.w, 1 / fboBack.h);
     gl.bindVertexArray(fullscreenVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -362,17 +411,10 @@ async function main() {
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, 3);
 
     // 3. Present: trail FBO + analytic 1/r^2 head halos, summed in linear
-    //    HDR and tonemapped once. Letterboxed centered square on canvas.
+    //    HDR and tonemapped once. Fills the entire canvas viewport.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.disable(gl.BLEND);
-    const cw = canvas.width, ch = canvas.height;
-    const sq = Math.min(cw, ch);
-    const ox = ((cw - sq) / 2) | 0;
-    const oy = ((ch - sq) / 2) | 0;
-    gl.viewport(0, 0, cw, ch);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.viewport(ox, oy, sq, sq);
+    gl.viewport(0, 0, canvas.width, canvas.height);
     gl.useProgram(presentProg);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, fboBack.tex);
