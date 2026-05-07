@@ -1,4 +1,4 @@
-#version 130
+#version 120
 
 uniform vec2 iResolution;
 uniform vec2 center;
@@ -9,8 +9,6 @@ uniform float zoom;
 uniform vec2 pointsA[trail_length];
 uniform vec2 pointsB[trail_length];
 uniform vec2 pointsC[trail_length];
-
-out vec4 fragColor;
 
 const vec3 colA = vec3(0.1, 0.9, 0.1);
 const vec3 colB = vec3(0.9, 0.05, 0.05);
@@ -80,4 +78,8 @@ void mainImage(in vec2 fragCoord, out vec4 fragColor) {
     fragColor = vec4(pow(clamp(color, 0.0, 1.0), vec3(0.4545)), 1.0);
 }
 
-void main() { mainImage(gl_FragCoord.xy, fragColor); }
+void main() {
+    vec4 col;
+    mainImage(gl_FragCoord.xy, col);
+    gl_FragColor = col;
+}

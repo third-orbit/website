@@ -92,7 +92,7 @@ class ThreeBody(app.Canvas):
             [1, 1],
             [1, -1],
         ]
-        self.program["iResolution"] = self.size
+        self.program["iResolution"] = self.physical_size
         self.program["iTime"] = 0.0
         self.program["zoom"] = zoom
         self.program["center"] = center
@@ -124,8 +124,8 @@ class ThreeBody(app.Canvas):
             self.save_screenshot("capture.png")
 
     def on_resize(self, event):
-        self.program["iResolution"] = event.size
-        gloo.set_viewport(0, 0, *event.size)
+        self.program["iResolution"] = event.physical_size
+        gloo.set_viewport(0, 0, *event.physical_size)
 
     def run(self):
         self.timer.start()
