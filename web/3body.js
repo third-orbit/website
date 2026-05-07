@@ -178,14 +178,21 @@ function disposeFbo(gl, fbo) {
   gl.deleteTexture(fbo.tex);
 }
 
-// Choose FBO dimensions: shorter axis fixed at FBO_SHORT, longer scales with
-// canvas aspect, capped at FBO_LONG_MAX so extreme aspects don't tank perf.
+// Choose FBO dimensions matching the canvas aspect exactly (so the present
+// pass never stretches). Default: short axis = FBO_SHORT. If that pushes the
+// long axis past FBO_LONG_MAX, shrink the short axis to keep aspect.
 function fboDimsForAspect(aspect) {
+  let w, h;
   if (aspect >= 1) {
-    return { w: Math.min(FBO_LONG_MAX, Math.round(FBO_SHORT * aspect)), h: FBO_SHORT };
+    h = FBO_SHORT;
+    w = Math.round(h * aspect);
+    if (w > FBO_LONG_MAX) { w = FBO_LONG_MAX; h = Math.round(w / aspect); }
   } else {
-    return { w: FBO_SHORT, h: Math.min(FBO_LONG_MAX, Math.round(FBO_SHORT / aspect)) };
+    w = FBO_SHORT;
+    h = Math.round(w / aspect);
+    if (h > FBO_LONG_MAX) { h = FBO_LONG_MAX; w = Math.round(h * aspect); }
   }
+  return { w: Math.max(1, w), h: Math.max(1, h) };
 }
 
 async function main() {
