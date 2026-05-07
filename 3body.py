@@ -26,8 +26,33 @@ need to experiment and adjust them manually.
 import json
 import numpy as np
 from vispy import app, gloo
+from vispy.gloo import gl as _vispy_gl
+from vispy.gloo.glir import GlirProgram as _GlirProgram
 from vispy.io import imsave
 from scipy.integrate import solve_ivp
+
+
+# Monkey-patch: vispy's GlirProgram.set_uniform has a bug where the array
+# element count is only computed on the first call (when the uniform's GL
+# handle is being cached). On every subsequent call, count defaults to 1,
+# so glUniform*v silently uploads only the first element of an array
+# uniform — making per-frame array updates impossible via the bulk path.
+# See vispy/gloo/glir.py:set_uniform. Without this patch we would have to
+# upload each element individually (300 calls/frame for our trail data).
+_orig_set_uniform = _GlirProgram.set_uniform
+
+
+def _set_uniform_array_fix(self, name, type_, value):
+    if not type_.startswith("mat") and name in self._handles:
+        count = value.nbytes // (4 * self.ATYPEINFO[type_][0])
+        if count > 1:
+            self.activate()
+            getattr(_vispy_gl, self.UTYPEMAP[type_])(self._handles[name], count, value)
+            return
+    _orig_set_uniform(self, name, type_, value)
+
+
+_GlirProgram.set_uniform = _set_uniform_array_fix
 
 resolution = (1000, 1000)
 G = m1 = m2 = m3 = 1.0
@@ -104,10 +129,10 @@ class ThreeBody(app.Canvas):
         indices = (
             np.arange(self.frame_index - trail_length, self.frame_index) % num_steps
         )
-        for i in range(trail_length):
-            self.program[f"pointsA[{i}]"] = r1[indices[i]]
-            self.program[f"pointsB[{i}]"] = r2[indices[i]]
-            self.program[f"pointsC[{i}]"] = r3[indices[i]]
+        # Requires the monkey patch above
+        self.program["pointsA"] = r1[indices].astype(np.float32)
+        self.program["pointsB"] = r2[indices].astype(np.float32)
+        self.program["pointsC"] = r3[indices].astype(np.float32)
         self.program.draw("triangles")
         self.frame_index += 1
 
@@ -135,4 +160,3 @@ class ThreeBody(app.Canvas):
 if __name__ == "__main__":
     anim = ThreeBody()
     anim.run()
-
