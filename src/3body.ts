@@ -403,6 +403,7 @@ async function main(): Promise<void> {
   let prevNow = epoch;
   let hiddenAt: number | null = null;
   let pausedDt = 0;
+  let running = true;
 
   // Catmull-Rom spline interpolation through 4 surrounding sample points.
   // Smooths out the polyline faceting that was visible during slingshots,
@@ -505,23 +506,30 @@ async function main(): Promise<void> {
   resize();
   window.addEventListener('resize', resize);
 
-  // ---- Visibility: pause the simulation clock so the orbit doesn't jump.
+  // ---- Visibility: actually pause the rAF chain when hidden. Browsers
+  // throttle rAF to ~1Hz on hidden tabs rather than stopping it; if we just
+  // skipped rendering we'd accumulate a multi-second `now - prevNow` gap and
+  // the sub-step loop would scatter capsules across the whole orbit on
+  // resume (the "spikes"). Instead, stop scheduling new frames when hidden
+  // and restart cleanly on resume after refreshing prevNow.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
+      running = false;
       hiddenAt = performance.now();
     } else if (hiddenAt != null) {
       pausedDt += performance.now() - hiddenAt;
       hiddenAt = null;
       prevNow = performance.now();
+      if (!running) {
+        running = true;
+        requestAnimationFrame(frame);
+      }
     }
   });
 
   // ---- Render loop
   function frame(now: number): void {
-    if (document.hidden) {
-      requestAnimationFrame(frame);
-      return;
-    }
+    if (!running) return;  // pause while tab is hidden — no rAF rescheduled
 
     const dtSec = Math.min(0.1, (now - prevNow) / 1000.0);
 
