@@ -337,11 +337,11 @@ async function main() {
 
   // Trail thickness scales with the orbit so visual proportion stays constant.
   const TRAIL_RADIUS    = worldHalfSize * 0.15;   // bounding capsule — far enough out that emission has faded by the edge
-  const TRAIL_STRENGTH  = worldHalfSize * 0.005;
+  const TRAIL_STRENGTH  = worldHalfSize * 0.0023; // tuned for the N_SUB sub-step polyline (more capsules per frame than before)
   // Head sizing is in CANVAS PIXELS — converted to world units on resize so
   // the visual size stays constant across orbits AND viewport sizes.
-  const HEAD_NUCLEUS_PX = 5;       // tight bright pinpoint
-  const HEAD_HALO_PX    = 45;      // 1/r^2 sun-like glow
+  const HEAD_NUCLEUS_PX = 3.5;     // tight bright pinpoint
+  const HEAD_HALO_PX    = 32;      // 1/r^2 sun-like glow
 
   // Recompute camera + world extent: object-fit-contain. Whichever orbit
   // axis is more constrained relative to the canvas dictates the fit;
@@ -361,27 +361,51 @@ async function main() {
   }
 
   // ---- Per-frame state
-  const prevPos = new Float32Array(6);
   const currPos = new Float32Array(6);
-
-  // Initialize prevPos to the position at t=0 so the first segment is zero-length.
-  for (let k = 0; k < 6; k++) prevPos[k] = samples[k];
-  currPos.set(prevPos);
+  // Each rendered frame is subdivided into N_SUB sub-segments so high-curvature
+  // motion (e.g. Dragonfly slingshots) renders as a polyline that follows the
+  // smooth Catmull-Rom curve instead of a single straight chord between
+  // consecutive frame positions.
+  const N_SUB = 8;
+  const subPositions = new Float32Array((N_SUB + 1) * 6);
+  for (let s = 0; s <= N_SUB; s++) {
+    for (let k = 0; k < 6; k++) subPositions[s * 6 + k] = samples[k];
+  }
+  currPos.set(samples.subarray(0, 6));
 
   const epoch = performance.now();
   let prevNow = epoch;
   let hiddenAt = null;
   let pausedDt = 0;
 
+  // Catmull-Rom spline interpolation through 4 surrounding sample points.
+  // Smooths out the polyline faceting that was visible during slingshots,
+  // where consecutive samples are spaced too far apart for linear lerp to
+  // hide the corners. The orbit is periodic so we wrap indices.
   function pickPosition(timeMs, out) {
+    const N = orbit.sampleCount;
     const phase = (((timeMs - epoch - pausedDt) / (visualPeriodS * 1000.0)) % 1.0 + 1.0) % 1.0;
-    const f = phase * orbit.sampleCount;
-    const i0 = Math.floor(f);
-    const i1 = (i0 + 1) % orbit.sampleCount;
-    const t = f - i0;
-    const o0 = i0 * 6, o1 = i1 * 6;
+    const f = phase * N;
+    const i1 = Math.floor(f);
+    const t = f - i1;
+    const i0 = (i1 - 1 + N) % N;
+    const i2 = (i1 + 1) % N;
+    const i3 = (i1 + 2) % N;
+    const o0 = i0 * 6, o1 = i1 * 6, o2 = i2 * 6, o3 = i3 * 6;
+    const t2 = t * t;
+    const t3 = t2 * t;
     for (let k = 0; k < 6; k++) {
-      out[k] = samples[o0 + k] + (samples[o1 + k] - samples[o0 + k]) * t;
+      const p0 = samples[o0 + k];
+      const p1 = samples[o1 + k];
+      const p2 = samples[o2 + k];
+      const p3 = samples[o3 + k];
+      // Catmull-Rom (uniform, tension 0.5):
+      out[k] = 0.5 * (
+        2 * p1
+        + (-p0 + p2) * t
+        + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+        + (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+      );
     }
   }
 
@@ -474,10 +498,18 @@ async function main() {
     }
 
     const dtSec = Math.min(0.1, (now - prevNow) / 1000.0);
-    prevNow = now;
 
-    prevPos.set(currPos);
-    pickPosition(now, currPos);
+    // Sample N_SUB+1 positions evenly across the frame's time interval.
+    // The first position == last frame's last sub-position (already in
+    // subPositions[0..5]) — drop it in by overwriting from currPos so we
+    // start exactly where the previous polyline ended.
+    for (let k = 0; k < 6; k++) subPositions[k] = currPos[k];
+    for (let s = 1; s <= N_SUB; s++) {
+      const t = prevNow + (now - prevNow) * (s / N_SUB);
+      pickPosition(t, subPositions.subarray(s * 6, (s + 1) * 6));
+    }
+    currPos.set(subPositions.subarray(N_SUB * 6, (N_SUB + 1) * 6));
+    prevNow = now;
 
     // 1. Fade + diffusion pass: fboFront × uFade (with cross blur) → fboBack
     gl.bindFramebuffer(gl.FRAMEBUFFER, fboBack.fbo);
@@ -492,17 +524,21 @@ async function main() {
     gl.bindVertexArray(fullscreenVao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    // 2. Trail segment pass: additive into fboBack (prev → curr capsule per body)
+    // 2. Trail segment pass: additive into fboBack. We draw N_SUB short
+    //    capsules per body so high-curvature motion renders as a smooth
+    //    polyline rather than a single straight chord.
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.useProgram(segmentProg);
     gl.bindVertexArray(segmentVao);
-    gl.uniform2fv(segUniforms.uPrev, prevPos);
-    gl.uniform2fv(segUniforms.uCurr, currPos);
     gl.uniform1f(segUniforms.uRadius, TRAIL_RADIUS);
     gl.uniform1f(segUniforms.uStrength, TRAIL_STRENGTH);
     gl.uniform1f(segUniforms.uExponent, 2.0);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, 3);
+    for (let s = 0; s < N_SUB; s++) {
+      gl.uniform2fv(segUniforms.uPrev, subPositions.subarray(s * 6, (s + 1) * 6));
+      gl.uniform2fv(segUniforms.uCurr, subPositions.subarray((s + 1) * 6, (s + 2) * 6));
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, 3);
+    }
 
     // 3. Present: trail FBO + analytic 1/r^2 head halos, summed in linear
     //    HDR and tonemapped once. Fills the entire canvas viewport.
