@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT_DIR = join(REPO_ROOT, 'static', 'public', 'fonts');
+const OUT_DIR = join(REPO_ROOT, 'src', 'public', 'fonts');
 const OUT_FILE = join(OUT_DIR, 'unica-one.woff2');
 
 const CSS_URL = 'https://fonts.googleapis.com/css2?family=Unica+One&display=swap';

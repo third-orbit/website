@@ -6,8 +6,8 @@
  * uses), samples it on a uniform time grid via Hermite interpolation, and
  * writes:
  *
- *   static/public/orbits.json          — index + per-orbit metadata
- *   static/public/orbits/<slug>.bin    — one little-endian float32 file per orbit
+ *   src/public/orbits.json          — index + per-orbit metadata
+ *   src/public/orbits/<slug>.bin    — one little-endian float32 file per orbit
  *
  * Splitting the binary per orbit lets the page only download the one orbit
  * it picks on load, instead of fetching all of them up front.
@@ -345,7 +345,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const REPO_ROOT  = join(__dirname, '..');
 const INIT_PATH  = join(__dirname, 'init_conditions.json');
-const OUT_DIR    = join(REPO_ROOT, 'static', 'public');
+const OUT_DIR    = join(REPO_ROOT, 'src', 'public');
 const BIN_DIR    = join(OUT_DIR, 'orbits');
 
 function main(): void {

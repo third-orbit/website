@@ -10,8 +10,8 @@ the renderer, the orbit precompute, and the build glue.
 scripts/
   precompute.ts                Adaptive DP54 integrator → orbit bins + JSON
   init_conditions.json         The 15 known periodic orbits
-  fetch-font.mjs               Downloads Unica One into static/public/fonts/
-static/                        Vite root (source)
+  fetch-font.mjs               Downloads Unica One into src/public/fonts/
+src/                        Vite root (source)
   index.html
   3body.ts                     The renderer
   public/                      Vite publicDir — copied as-is during build
