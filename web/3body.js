@@ -14,7 +14,7 @@ const CONTRAST = 1.8;
 const FADE_TAU = 1.6;            // 1/s — per-second decay rate of the trail (lower = longer trails)
 const FBO_SHORT = 720;           // shorter FBO axis — orbit is sized to this; longer axis scales with viewport aspect
 const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blow up GPU cost
-const FRAMING_MARGIN = 0.05;     // 5% breathing room around the orbit's bounding box
+const FRAMING_MARGIN = 0.15;     // 5% breathing room around the orbit's bounding box
 
 const COLORS = new Float32Array([
   0.10, 0.35, 1.00,  // body C — saturated blue
@@ -343,26 +343,19 @@ async function main() {
   const HEAD_NUCLEUS_PX = 5;       // tight bright pinpoint
   const HEAD_HALO_PX    = 45;      // 1/r^2 sun-like glow
 
-  // Recompute camera + world extent so the orbit fits the shorter FBO axis
-  // and halos extend naturally into the longer axis.
+  // Recompute camera + world extent: object-fit-contain. Whichever orbit
+  // axis is more constrained relative to the canvas dictates the fit;
+  // the other axis has headroom that the halos extend into.
   function updateCamera(fboW, fboH) {
     const aspect = fboW / fboH;
-    let scaleX, scaleY, extX, extY;
-    if (aspect >= 1) {
-      scaleY = 1 / worldHalfSize;
-      scaleX = scaleY / aspect;
-      extX = worldHalfSize * aspect;
-      extY = worldHalfSize;
-    } else {
-      scaleX = 1 / worldHalfSize;
-      scaleY = scaleX * aspect;
-      extX = worldHalfSize;
-      extY = worldHalfSize / aspect;
-    }
-    proj[0] = scaleX;
-    proj[1] = scaleY;
-    proj[2] = -orbit.center[0] * scaleX;
-    proj[3] = -orbit.center[1] * scaleY;
+    const exMargin = orbit.extent[0] * (1 + FRAMING_MARGIN);
+    const eyMargin = orbit.extent[1] * (1 + FRAMING_MARGIN);
+    const extY = Math.max(eyMargin, exMargin / aspect);
+    const extX = extY * aspect;
+    proj[0] = 1 / extX;
+    proj[1] = 1 / extY;
+    proj[2] = -orbit.center[0] * proj[0];
+    proj[3] = -orbit.center[1] * proj[1];
     worldExtent[0] = extX;
     worldExtent[1] = extY;
   }
@@ -448,10 +441,9 @@ async function main() {
     }
     updateCamera(dims.w, dims.h);
 
-    // Convert pixel-defined head sizes to world units. Orbit fits the shorter
-    // canvas axis, so 1 world unit spans shortPx / (2 * worldHalfSize) pixels.
-    const shortPx = Math.min(cw, ch);
-    const worldPerPx = (2 * worldHalfSize) / shortPx;
+    // Convert pixel-defined head sizes to world units using the actual
+    // canvas-to-world ratio. Aspect-preserving so x and y agree.
+    const worldPerPx = (2 * worldExtent[1]) / ch;
 
     gl.useProgram(segmentProg);
     gl.uniform4fv(segUniforms.uProj, proj);
