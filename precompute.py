@@ -4,15 +4,18 @@ Pre-compute three-body orbit positions for the WebGL viewer.
 Reads init_conditions.json, integrates each periodic orbit at high precision,
 samples it on a uniform time grid, and writes:
 
-  web/orbits.bin   — concatenated little-endian float32 arrays of body positions
-  web/orbits.json  — index + per-orbit metadata (offset, length, framing)
+  web/orbits.json          — index + per-orbit metadata + binary file path
+  web/orbits/<slug>.bin    — one little-endian float32 file per orbit
+
+Splitting the binary per orbit lets the page only download the one orbit it
+picks on load, instead of fetching all 16.
 
 Run from the repo root:  python precompute.py
 """
 
 import json
 import math
-import struct
+import re
 from pathlib import Path
 
 import numpy as np
@@ -73,44 +76,54 @@ def precompute_one(name, conditions):
     }
 
 
+def slugify(name):
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", name).strip("-").lower()
+    return s or "orbit"
+
+
 def main():
     repo_root = Path(__file__).parent
     init_path = repo_root / "init_conditions.json"
     out_dir = repo_root / "web"
-    out_dir.mkdir(exist_ok=True)
+    bin_dir = out_dir / "orbits"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean up the previous monolithic file and any stale per-orbit bins so
+    # renames between runs don't leave orphans.
+    old_monolith = out_dir / "orbits.bin"
+    if old_monolith.exists():
+        old_monolith.unlink()
+    for f in bin_dir.glob("*.bin"):
+        f.unlink()
 
     with open(init_path, encoding="utf-8") as f:
         init_conditions = json.load(f)
 
     orbits = []
-    bin_chunks = []
-    byte_offset = 0
+    total_bytes = 0
 
     for name, conditions in init_conditions.items():
         print(f"integrating {name!r} (T={conditions['period']:.3f}) ...")
         orbit = precompute_one(name, conditions)
         samples = orbit.pop("_samples")
 
-        orbit["byteOffset"] = byte_offset
+        slug = slugify(name)
+        bin_path = bin_dir / f"{slug}.bin"
+        with open(bin_path, "wb") as f:
+            f.write(samples.tobytes(order="C"))
+        size = bin_path.stat().st_size
+        total_bytes += size
+
+        orbit["file"] = f"orbits/{slug}.bin"
         orbits.append(orbit)
-
-        chunk = samples.tobytes(order="C")
-        bin_chunks.append(chunk)
-        byte_offset += len(chunk)
-
-    bin_path = out_dir / "orbits.bin"
-    with open(bin_path, "wb") as f:
-        for chunk in bin_chunks:
-            f.write(chunk)
+        print(f"  wrote {bin_path.relative_to(repo_root)} ({size / 1024:.1f} KiB)")
 
     json_path = out_dir / "orbits.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(orbits, f, indent=2)
 
-    total_samples = sum(o["sampleCount"] for o in orbits)
     print()
-    print(f"wrote {bin_path} ({byte_offset / 1024:.1f} KiB, {total_samples} samples across {len(orbits)} orbits)")
-    print(f"wrote {json_path}")
+    print(f"wrote {json_path.relative_to(repo_root)} ({len(orbits)} orbits, {total_bytes / 1024:.1f} KiB total)")
 
 
 if __name__ == "__main__":

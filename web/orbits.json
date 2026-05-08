@@ -11,7 +11,7 @@
       1.0578269958496094,
       0.5229155421257019
     ],
-    "byteOffset": 0
+    "file": "orbits/figure-8.bin"
   },
   {
     "name": "Broucke A11",
@@ -25,7 +25,7 @@
       1.428989052772522,
       1.4231387376785278
     ],
-    "byteOffset": 49152
+    "file": "orbits/broucke-a11.bin"
   },
   {
     "name": "Broucke R4",
@@ -39,7 +39,7 @@
       0.8733047246932983,
       0.8733047246932983
     ],
-    "byteOffset": 127368
+    "file": "orbits/broucke-r4.bin"
   },
   {
     "name": "Dragonfly",
@@ -53,7 +53,7 @@
       1.031975507736206,
       0.897216260433197
     ],
-    "byteOffset": 176520
+    "file": "orbits/dragonfly.bin"
   },
   {
     "name": "Loop-end-triangles",
@@ -67,7 +67,7 @@
       0.7023394703865051,
       0.7045890092849731
     ],
-    "byteOffset": 227592
+    "file": "orbits/loop-end-triangles.bin"
   },
   {
     "name": "Broucke A1",
@@ -81,7 +81,7 @@
       2.2096176147460938,
       0.5562266707420349
     ],
-    "byteOffset": 276744
+    "file": "orbits/broucke-a1.bin"
   },
   {
     "name": "two-ovals",
@@ -95,7 +95,7 @@
       0.7620524168014526,
       0.8257206678390503
     ],
-    "byteOffset": 325896
+    "file": "orbits/two-ovals.bin"
   },
   {
     "name": "Butterfly I",
@@ -109,7 +109,7 @@
       1.0421926975250244,
       0.17452016472816467
     ],
-    "byteOffset": 375048
+    "file": "orbits/butterfly-i.bin"
   },
   {
     "name": "catface",
@@ -123,7 +123,7 @@
       0.6327888369560242,
       1.4275259971618652
     ],
-    "byteOffset": 424200
+    "file": "orbits/catface.bin"
   },
   {
     "name": "Broucke A4",
@@ -137,7 +137,7 @@
       1.1579296588897705,
       1.156599998474121
     ],
-    "byteOffset": 473352
+    "file": "orbits/broucke-a4.bin"
   },
   {
     "name": "Broucke R1",
@@ -151,7 +151,7 @@
       0.8083106279373169,
       0.7768665552139282
     ],
-    "byteOffset": 522504
+    "file": "orbits/broucke-r1.bin"
   },
   {
     "name": "IVa.2.A",
@@ -165,7 +165,7 @@
       1.1152408123016357,
       1.1373865604400635
     ],
-    "byteOffset": 571656
+    "file": "orbits/iva-2-a.bin"
   },
   {
     "name": "Broucke A13",
@@ -179,7 +179,7 @@
       3.235252618789673,
       3.235252618789673
     ],
-    "byteOffset": 620808
+    "file": "orbits/broucke-a13.bin"
   },
   {
     "name": "Broucke A10",
@@ -193,7 +193,7 @@
       2.5274927616119385,
       2.1914424896240234
     ],
-    "byteOffset": 764136
+    "file": "orbits/broucke-a10.bin"
   },
   {
     "name": "googles",
@@ -207,7 +207,7 @@
       1.0497245788574219,
       0.738248884677887
     ],
-    "byteOffset": 842424
+    "file": "orbits/googles.bin"
   },
   {
     "name": "Broucke A7",
@@ -221,6 +221,6 @@
       1.661353349685669,
       1.661353349685669
     ],
-    "byteOffset": 891576
+    "file": "orbits/broucke-a7.bin"
   }
 ]

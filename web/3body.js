@@ -196,15 +196,12 @@ function fboDimsForAspect(aspect) {
 }
 
 async function main() {
-  const [orbitsMeta, binBuf] = await Promise.all([
-    fetch('orbits.json').then(r => r.json()),
-    fetch('orbits.bin').then(r => r.arrayBuffer()),
-  ]);
-
+  const orbitsMeta = await fetch('orbits.json').then(r => r.json());
   const orbit = orbitsMeta[Math.floor(Math.random() * orbitsMeta.length)];
   console.log('Orbit:', orbit.name);
 
-  const samples = new Float32Array(binBuf, orbit.byteOffset, orbit.sampleCount * 6);
+  const binBuf = await fetch(orbit.file).then(r => r.arrayBuffer());
+  const samples = new Float32Array(binBuf);
 
   const canvas = document.getElementById('c');
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, premultipliedAlpha: false });
