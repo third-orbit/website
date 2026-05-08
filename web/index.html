@@ -4,13 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Three-body</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unica+One&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
-  canvas { display: block; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100vw; height: 100vh; position: absolute; inset: 0; }
+  .title {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: 'Unica One', sans-serif;
+    font-size: clamp(2rem, 8vw, 7rem);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+  .title.loaded { opacity: 1; }
+  .title-main {
+    position: relative;
+  }
+  .title-ltd {
+    position: absolute;
+    left: 100%;
+    bottom: 0.75em;
+    margin-left: -0.5em;
+    font-size: 0.25em;
+    letter-spacing: 0.1em;
+    opacity: 0.5;
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div class="title"><span class="title-main">Third Orbit<span class="title-ltd">Ltd</span></span></div>
+<script>
+  // Hold the title at opacity 0 until the webfont is actually ready, then
+  // fade it in. Without this, the title would flash in a fallback face for
+  // a frame or two before swapping to Unica One.
+  document.fonts.load("1em 'Unica One'").then(() => {
+    requestAnimationFrame(() => {
+      document.querySelector('.title').classList.add('loaded');
+    });
+  });
+</script>
 <script type="module" src="3body.js"></script>
 </body>
 </html>

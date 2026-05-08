@@ -17,9 +17,9 @@ const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blo
 const FRAMING_MARGIN = 0.05;     // 5% breathing room around the orbit's bounding box
 
 const COLORS = new Float32Array([
+  0.10, 0.35, 1.00,  // body C — saturated blue
   1.00, 0.30, 0.05,  // body A — amber / orange
   1.00, 0.85, 0.55,  // body B — warm cream
-  0.10, 0.35, 1.00,  // body C — saturated blue
 ]);
 const LUMS = new Float32Array(3);
 for (let i = 0; i < 3; i++) {
