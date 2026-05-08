@@ -7,6 +7,10 @@
 // orbit's playback time so the *initial* body speed maps to this target
 // on-screen speed. Bigger value = faster bodies.
 const TARGET_BODY_SPEED = 0.65;  // worldHalfSize units per real second
+
+// 1.0 = neutral (proper sRGB gamma); >1 crushes mid-tones for a more
+// contrasty look; <1 lifts mid-tones for a softer/flatter look.
+const CONTRAST = 1.8;
 const FADE_TAU = 1.6;            // 1/s — per-second decay rate of the trail (lower = longer trails)
 const FBO_SHORT = 720;           // shorter FBO axis — orbit is sized to this; longer axis scales with viewport aspect
 const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blow up GPU cost
@@ -63,6 +67,7 @@ uniform vec2 uCenter;
 uniform vec2 uWorldExtent;       // half-extent of the FBO's view in world units (per-axis)
 uniform float uNucleus;
 uniform float uHalo;
+uniform float uContrast;
 out vec4 fragColor;
 void main() {
   vec3 c = texture(uFbo, vUv).rgb;
@@ -79,7 +84,8 @@ void main() {
   float m = max(c.r, max(c.g, c.b));
   c *= smoothstep(0.0, 0.06, m);
   c = vec3(1.0) - exp(-c);
-  c = pow(c, vec3(1.0 / 2.2));
+  // sRGB gamma + contrast: crushes mid-tones when uContrast > 1.
+  c = pow(c, vec3(uContrast / 2.2));
   fragColor = vec4(c, 1.0);
 }`;
 
@@ -344,6 +350,7 @@ async function main() {
     uWorldExtent: gl.getUniformLocation(presentProg, 'uWorldExtent'),
     uNucleus: gl.getUniformLocation(presentProg, 'uNucleus'),
     uHalo: gl.getUniformLocation(presentProg, 'uHalo'),
+    uContrast: gl.getUniformLocation(presentProg, 'uContrast'),
   };
 
   // Bind once: shared static uniforms (per-resize camera bindings handled below).
@@ -355,6 +362,7 @@ async function main() {
   gl.uniform3fv(presentUniforms.uColor, COLORS);
   gl.uniform1fv(presentUniforms.uLum, LUMS);
   gl.uniform2f(presentUniforms.uCenter, orbit.center[0], orbit.center[1]);
+  gl.uniform1f(presentUniforms.uContrast, CONTRAST);
 
   // ---- Resize: canvas backing-store + FBO dimensions + camera projection.
   function resize() {
