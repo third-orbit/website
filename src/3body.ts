@@ -272,23 +272,43 @@ async function main(): Promise<void> {
     }
   }
 
+  // URL hash override: e.g. `#figure-8` or `#butterfly-iv-rotated` picks
+  // that specific orbit instead of the weighted random one. Slugs follow
+  // the same convention as the bin filenames (lowercase, alphanum only,
+  // joined with hyphens). Useful for sharing direct links.
+  const slugify = (name: string) =>
+    name.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
+
   // Bias the random pick toward orbits whose bounding-box aspect matches
   // the viewport. Distance is measured in log-aspect space (so 2:1 and
   // 1:2 are equivalently "off") with a Gaussian falloff. Bigger sigma =
   // softer bias; smaller = stricter aspect matching.
-  const viewLogAspect = Math.log(window.innerWidth / window.innerHeight);
-  const sigma = 0.2;
-  const weights = pool.map(o => {
-    const diff = Math.log(o.extent[0] / o.extent[1]) - viewLogAspect;
-    return Math.exp(-(diff * diff) / (2 * sigma * sigma));
-  });
-  const total = weights.reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
-  let orbit: PoolEntry = pool[pool.length - 1];
-  for (let i = 0; i < pool.length; i++) {
-    r -= weights[i];
-    if (r <= 0) { orbit = pool[i]; break; }
+  function pickWeighted(): PoolEntry {
+    const viewLogAspect = Math.log(window.innerWidth / window.innerHeight);
+    const sigma = 0.2;
+    const weights = pool.map(o => {
+      const diff = Math.log(o.extent[0] / o.extent[1]) - viewLogAspect;
+      return Math.exp(-(diff * diff) / (2 * sigma * sigma));
+    });
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < pool.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return pool[i];
+    }
+    return pool[pool.length - 1];
   }
+
+  const hash = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+  let fromHash: PoolEntry | undefined;
+  if (hash) {
+    fromHash = pool.find(o => slugify(o.name) === hash);
+    if (!fromHash) {
+      console.warn(`No orbit matches "#${hash}". Available slugs:`,
+        pool.map(o => slugify(o.name)).join(', '));
+    }
+  }
+  const orbit: PoolEntry = fromHash ?? pickWeighted();
   console.log('Orbit:', orbit.name);
 
   const binBuf = await fetch(orbit.file).then(r => r.arrayBuffer());
