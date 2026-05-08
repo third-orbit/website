@@ -31,6 +31,14 @@
     transition: opacity 1.2s ease;
   }
   .title.loaded { opacity: 1; }
+  .title-link {
+    /* Make the title a clickable mailto link without showing the usual
+       link affordance: same colour as surrounding text, no underline.
+       Pointer-events override the .title parent's `none`. */
+    color: inherit;
+    text-decoration: none;
+    pointer-events: auto;
+  }
   .title-main {
     position: relative;
   }
@@ -47,8 +55,15 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="title"><span class="title-main">Third Orbit<span class="title-ltd">Ltd</span></span></div>
+<div class="title"><a class="title-link"><span class="title-main">Third Orbit<span class="title-ltd">Ltd</span></span></a></div>
 <script>
+  // Wire up the mailto link from parts at runtime — kept out of the static
+  // HTML so naive scrapers don't pick the address up.
+  (function () {
+    var u = ['hello', String.fromCharCode(64), 'thirdorbit', '.', 'space'].join('');
+    document.querySelector('.title-link').setAttribute('href', 'mailto:' + u);
+  })();
+
   // Hold the title at opacity 0 until the webfont is actually ready, then
   // fade it in. Without this, the title would flash in a fallback face for
   // a frame or two before swapping to Unica One.
