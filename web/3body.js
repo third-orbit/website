@@ -18,8 +18,8 @@ const FRAMING_MARGIN = 0.05;     // 5% breathing room around the orbit's boundin
 
 const COLORS = new Float32Array([
   0.10, 0.35, 1.00,  // body C — saturated blue
-  1.00, 0.30, 0.05,  // body A — amber / orange
   1.00, 0.85, 0.55,  // body B — warm cream
+  1.00, 0.30, 0.05,  // body A — amber / orange
 ]);
 const LUMS = new Float32Array(3);
 for (let i = 0; i < 3; i++) {
@@ -216,20 +216,23 @@ function fboDimsForAspect(aspect) {
 async function main() {
   const orbitsMeta = await fetch('orbits.json').then(r => r.json());
 
-  // Each orbit goes into the pool twice: original orientation and 90° CCW
-  // rotated. Rotating swaps the bounding-box axes so wide orbits become
-  // tall and vice versa, doubling the chance of finding one that fits the
-  // viewport. The actual sample rotation happens client-side after fetch.
+  // Build the candidate pool: each non-square orbit gets two entries
+  // (original orientation + 90° CCW rotated) so wide orbits and tall
+  // orbits both have a shot at fitting the viewport. Square-ish orbits
+  // appear once, otherwise they'd be doubled-weighted relative to the
+  // others (their rotated version looks identical).
   const pool = [];
   for (const o of orbitsMeta) {
     pool.push({ ...o, rotated: false });
-    pool.push({
-      ...o,
-      name: o.name + ' (rotated)',
-      center: [-o.center[1], o.center[0]],
-      extent: [o.extent[1], o.extent[0]],
-      rotated: true,
-    });
+    if (Math.abs(Math.log(o.extent[0] / o.extent[1])) > 0.1) {
+      pool.push({
+        ...o,
+        name: o.name + ' (rotated)',
+        center: [-o.center[1], o.center[0]],
+        extent: [o.extent[1], o.extent[0]],
+        rotated: true,
+      });
+    }
   }
 
   // Bias the random pick toward orbits whose bounding-box aspect matches
@@ -237,7 +240,7 @@ async function main() {
   // 1:2 are equivalently "off") with a Gaussian falloff. Bigger sigma =
   // softer bias; smaller = stricter aspect matching.
   const viewLogAspect = Math.log(window.innerWidth / window.innerHeight);
-  const sigma = 0.5;
+  const sigma = 0.2;
   const weights = pool.map(o => {
     const diff = Math.log(o.extent[0] / o.extent[1]) - viewLogAspect;
     return Math.exp(-(diff * diff) / (2 * sigma * sigma));
