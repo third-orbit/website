@@ -9,9 +9,9 @@ const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blo
 const FRAMING_MARGIN = 0.05;     // 5% breathing room around the orbit's bounding box
 
 const COLORS = new Float32Array([
-  0.10, 0.90, 0.10,  // body A — green
-  0.90, 0.05, 0.05,  // body B — red
-  0.02, 0.02, 0.80,  // body C — blue
+  1.00, 0.30, 0.05,  // body A — amber / orange
+  1.00, 0.85, 0.55,  // body B — warm cream
+  0.10, 0.35, 1.00,  // body C — saturated blue
 ]);
 const LUMS = new Float32Array(3);
 for (let i = 0; i < 3; i++) {
@@ -72,7 +72,7 @@ void main() {
   // Crush the ambient 1/r^2 floor to true black — the gamma curve would
   // otherwise lift any tiny linear value into a visible grey backdrop.
   c = max(c - vec3(0.04), vec3(0.0));
-  c = vec3(1.0) - exp(-c);                  // single tonemap of the full sum
+  c = vec3(1.0) - exp(-c);
   c = pow(c, vec3(1.0 / 2.2));
   fragColor = vec4(c, 1.0);
 }`;
