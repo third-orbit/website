@@ -2,7 +2,11 @@
 // Ping-pong framebuffer feedback for the trail; per-frame fade + 3 short
 // capsule draws + present. Orbit positions are pre-baked by precompute.py.
 
-const VISUAL_PERIOD_S = 8.0;     // every orbit completes one period in this many seconds
+// Each body should sweep across the screen at roughly the same speed across
+// orbits regardless of period or extent. We achieve this by stretching the
+// orbit's playback time so the *initial* body speed maps to this target
+// on-screen speed. Bigger value = faster bodies.
+const TARGET_BODY_SPEED = 0.65;  // worldHalfSize units per real second
 const FADE_TAU = 1.6;            // 1/s — per-second decay rate of the trail (lower = longer trails)
 const FBO_SHORT = 720;           // shorter FBO axis — orbit is sized to this; longer axis scales with viewport aspect
 const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blow up GPU cost
@@ -254,6 +258,11 @@ async function main() {
   const proj = new Float32Array(4);
   const worldExtent = new Float32Array(2);
 
+  // Per-orbit visual period: stretch the orbit's playback so the initial
+  // body speed (in worldHalfSize units / orbit-time) lands at TARGET_BODY_SPEED
+  // (in worldHalfSize units / real second). Faster-starting orbits play longer.
+  const visualPeriodS = orbit.period * (orbit.avgStartSpeed / worldHalfSize) / TARGET_BODY_SPEED;
+
   // Trail thickness scales with the orbit so visual proportion stays constant.
   const TRAIL_RADIUS    = worldHalfSize * 0.15;   // bounding capsule — far enough out that emission has faded by the edge
   const TRAIL_STRENGTH  = worldHalfSize * 0.005;
@@ -300,7 +309,7 @@ async function main() {
   let pausedDt = 0;
 
   function pickPosition(timeMs, out) {
-    const phase = (((timeMs - epoch - pausedDt) / (VISUAL_PERIOD_S * 1000.0)) % 1.0 + 1.0) % 1.0;
+    const phase = (((timeMs - epoch - pausedDt) / (visualPeriodS * 1000.0)) % 1.0 + 1.0) % 1.0;
     const f = phase * orbit.sampleCount;
     const i0 = Math.floor(f);
     const i1 = (i0 + 1) % orbit.sampleCount;

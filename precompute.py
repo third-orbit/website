@@ -61,6 +61,12 @@ def precompute_one(name, conditions):
     center = bodies.mean(axis=0)
     extent = np.max(np.abs(bodies - center), axis=0)
 
+    # Mean speed of the bodies at t=0 — used by the viewer to pick a per-orbit
+    # playback duration that keeps on-screen speed roughly constant across
+    # orbits, regardless of period or spatial extent.
+    v_init = np.array(conditions["velocities"])  # (3, 2)
+    avg_start_speed = float(np.linalg.norm(v_init, axis=1).mean())
+
     seam = np.linalg.norm(sol.sol(T) - sol.sol(0))
     seam_rel = seam / max(extent.max(), 1e-12)
     if seam_rel > 1e-6:
@@ -72,6 +78,7 @@ def precompute_one(name, conditions):
         "sampleCount": n_samples,
         "center": [float(center[0]), float(center[1])],
         "extent": [float(extent[0]), float(extent[1])],
+        "avgStartSpeed": avg_start_speed,
         "_samples": samples,
     }
 
