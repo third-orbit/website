@@ -249,11 +249,13 @@ async function main() {
   const proj = new Float32Array(4);
   const worldExtent = new Float32Array(2);
 
-  // Sizing scales with the orbit so visual thickness is constant across orbits.
+  // Trail thickness scales with the orbit so visual proportion stays constant.
   const TRAIL_RADIUS    = worldHalfSize * 0.15;   // bounding capsule — far enough out that emission has faded by the edge
   const TRAIL_STRENGTH  = worldHalfSize * 0.005;
-  const HEAD_NUCLEUS    = worldHalfSize * 0.012;  // tight bright pinpoint
-  const HEAD_HALO       = worldHalfSize * 0.10;   // 1/r^2 sun-like glow that decays into the void
+  // Head sizing is in CANVAS PIXELS — converted to world units on resize so
+  // the visual size stays constant across orbits AND viewport sizes.
+  const HEAD_NUCLEUS_PX = 5;       // tight bright pinpoint
+  const HEAD_HALO_PX    = 45;      // 1/r^2 sun-like glow
 
   // Recompute camera + world extent so the orbit fits the shorter FBO axis
   // and halos extend naturally into the longer axis.
@@ -339,8 +341,6 @@ async function main() {
   gl.uniform3fv(presentUniforms.uColor, COLORS);
   gl.uniform1fv(presentUniforms.uLum, LUMS);
   gl.uniform2f(presentUniforms.uCenter, orbit.center[0], orbit.center[1]);
-  gl.uniform1f(presentUniforms.uNucleus, HEAD_NUCLEUS);
-  gl.uniform1f(presentUniforms.uHalo, HEAD_HALO);
 
   // ---- Resize: canvas backing-store + FBO dimensions + camera projection.
   function resize() {
@@ -360,10 +360,17 @@ async function main() {
     }
     updateCamera(dims.w, dims.h);
 
+    // Convert pixel-defined head sizes to world units. Orbit fits the shorter
+    // canvas axis, so 1 world unit spans shortPx / (2 * worldHalfSize) pixels.
+    const shortPx = Math.min(cw, ch);
+    const worldPerPx = (2 * worldHalfSize) / shortPx;
+
     gl.useProgram(segmentProg);
     gl.uniform4fv(segUniforms.uProj, proj);
     gl.useProgram(presentProg);
     gl.uniform2fv(presentUniforms.uWorldExtent, worldExtent);
+    gl.uniform1f(presentUniforms.uNucleus, HEAD_NUCLEUS_PX * worldPerPx);
+    gl.uniform1f(presentUniforms.uHalo, HEAD_HALO_PX * worldPerPx);
   }
   resize();
   window.addEventListener('resize', resize);
