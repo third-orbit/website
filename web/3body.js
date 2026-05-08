@@ -69,9 +69,11 @@ void main() {
     float halo = pow(uHalo    / d, 2.0) / uLum[i];   // 1/r^2 sun glow
     c += uColor[i] * min(core + halo, 60.0);
   }
-  // Crush the ambient 1/r^2 floor to true black — the gamma curve would
-  // otherwise lift any tiny linear value into a visible grey backdrop.
-  c = max(c - vec3(0.04), vec3(0.0));
+  // Crush the ambient 1/r^2 floor to true black using a SMOOTH ramp on the
+  // max channel. A hard subtract here would create a visible boundary circle
+  // around each body where the halo crosses the cutoff in linear space.
+  float m = max(c.r, max(c.g, c.b));
+  c *= smoothstep(0.0, 0.06, m);
   c = vec3(1.0) - exp(-c);
   c = pow(c, vec3(1.0 / 2.2));
   fragColor = vec4(c, 1.0);
@@ -117,6 +119,7 @@ flat in float vLum;
 in vec2 vWorld;
 uniform float uStrength;
 uniform float uExponent;
+uniform float uRadius;
 out vec4 fragColor;
 float sdSegment(vec2 p, vec2 a, vec2 b) {
   vec2 pa = p - a, ba = b - a;
@@ -130,6 +133,11 @@ void main() {
   float d = max(sdSegment(vWorld, vA, vB), 1e-5);
   float intensity = pow(uStrength / d, uExponent) / vLum;
   intensity = min(intensity, 60.0);
+  // Soft-mask as we approach the capsule boundary. Without this, emission
+  // jumps from "tiny glow" inside the quad to absolute zero outside, and
+  // the gamma curve amplifies that step into a visible perpendicular line
+  // at the front/back of the body's halo.
+  intensity *= 1.0 - smoothstep(uRadius * 0.65, uRadius, d);
   fragColor = vec4(vColor * intensity, 1.0);
 }`;
 
