@@ -26,13 +26,19 @@ for (let i = 0; i < 3; i++) {
   LUMS[i] = 0.299 * COLORS[3*i] + 0.587 * COLORS[3*i+1] + 0.114 * COLORS[3*i+2];
 }
 
+// aPos is unused inside this shader (positions come from gl_VertexID), but
+// it's declared and lightly referenced so the linker keeps an attribute at
+// location 0. Without it, Firefox's WebGL flags a slow-path warning even
+// when the VAO has a buffer enabled at location 0, because the *program*
+// has no attribute there.
 const VS_FULLSCREEN = `#version 300 es
+in vec2 aPos;
 out vec2 vUv;
 const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));
 void main() {
   vec2 p = verts[gl_VertexID];
   vUv = p * 0.5 + 0.5;
-  gl_Position = vec4(p, 0.0, 1.0);
+  gl_Position = vec4(p + aPos * 0.0, 0.0, 1.0);
 }`;
 
 const FS_FADE = `#version 300 es
@@ -161,10 +167,15 @@ function compile(gl, type, src) {
   return sh;
 }
 
-function program(gl, vsSrc, fsSrc) {
+function program(gl, vsSrc, fsSrc, attribLocations = null) {
   const p = gl.createProgram();
   gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vsSrc));
   gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fsSrc));
+  if (attribLocations) {
+    for (const [name, loc] of Object.entries(attribLocations)) {
+      gl.bindAttribLocation(p, loc, name);
+    }
+  }
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
     throw new Error('link: ' + gl.getProgramInfoLog(p));
@@ -277,14 +288,16 @@ async function main() {
 
   // ---- Resources
 
-  const fadeProg = program(gl, VS_FULLSCREEN, FS_FADE);
-  const presentProg = program(gl, VS_FULLSCREEN, FS_PRESENT);
-  const segmentProg = program(gl, VS_SEGMENT, FS_SEGMENT);
+  // Pin aPos to attribute location 0 in every program. Desktop GL (macOS)
+  // and Firefox warn about expensive emulation when attribute 0 isn't an
+  // enabled VBO-backed attribute on every draw. Pinning ensures every VAO
+  // and every program agrees that location 0 = aPos.
+  const fadeProg    = program(gl, VS_FULLSCREEN, FS_FADE,    { aPos: 0 });
+  const presentProg = program(gl, VS_FULLSCREEN, FS_PRESENT, { aPos: 0 });
+  const segmentProg = program(gl, VS_SEGMENT,    FS_SEGMENT, { aPos: 0 });
 
-  // Empty VAO for the fullscreen passes (vertices generated in the vertex shader).
-  const fullscreenVao = gl.createVertexArray();
-
-  // Unit quad for segment instances.
+  // Unit quad for segment instances. Created before the VAOs so both can
+  // reference it for their location-0 attribute.
   const quadVerts = new Float32Array([
     -0.5,-0.5,  0.5,-0.5,  0.5, 0.5,
     -0.5,-0.5,  0.5, 0.5, -0.5, 0.5,
@@ -292,12 +305,21 @@ async function main() {
   const quadVbo = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
   gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
+
+  // Fullscreen VAO: shaders use gl_VertexID to synthesize positions, but
+  // attribute 0 still needs to be enabled with a real buffer to keep the
+  // GL fast path on macOS. The data is just ignored by the shader.
+  const fullscreenVao = gl.createVertexArray();
+  gl.bindVertexArray(fullscreenVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
   const segmentVao = gl.createVertexArray();
   gl.bindVertexArray(segmentVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
-  const aPosLocSeg = gl.getAttribLocation(segmentProg, 'aPos');
-  gl.enableVertexAttribArray(aPosLocSeg);
-  gl.vertexAttribPointer(aPosLocSeg, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
   let fboFront = null;
