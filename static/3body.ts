@@ -1,6 +1,27 @@
 // WebGL 2 three-body orbit background.
-// Ping-pong framebuffer feedback for the trail; per-frame fade + 3 short
+// Ping-pong framebuffer feedback for the trail; per-frame fade + N_SUB short
 // capsule draws + present. Orbit positions are pre-baked by precompute.py.
+
+interface OrbitMeta {
+  name: string;
+  period: number;
+  sampleCount: number;
+  center: [number, number];
+  extent: [number, number];
+  avgStartSpeed: number;
+  file: string;
+}
+
+interface PoolEntry extends OrbitMeta {
+  rotated: boolean;
+}
+
+interface Fbo {
+  tex: WebGLTexture;
+  fbo: WebGLFramebuffer;
+  w: number;
+  h: number;
+}
 
 // Each body should sweep across the screen at roughly the same speed across
 // orbits regardless of period or extent. We achieve this by stretching the
@@ -14,7 +35,7 @@ const CONTRAST = 1.8;
 const FADE_TAU = 1.6;            // 1/s — per-second decay rate of the trail (lower = longer trails)
 const FBO_SHORT = 720;           // shorter FBO axis — orbit is sized to this; longer axis scales with viewport aspect
 const FBO_LONG_MAX = 1920;       // safety cap so ultra-wide viewports don't blow up GPU cost
-const FRAMING_MARGIN = 0.15;     // 5% breathing room around the orbit's bounding box
+const FRAMING_MARGIN = 0.15;     // breathing room around the orbit's bounding box
 
 const COLORS = new Float32Array([
   0.10, 0.35, 1.00,  // body C — saturated blue
@@ -157,8 +178,8 @@ void main() {
   fragColor = vec4(vColor * intensity, 1.0);
 }`;
 
-function compile(gl, type, src) {
-  const sh = gl.createShader(type);
+function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
+  const sh = gl.createShader(type)!;
   gl.shaderSource(sh, src);
   gl.compileShader(sh);
   if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
@@ -167,8 +188,13 @@ function compile(gl, type, src) {
   return sh;
 }
 
-function program(gl, vsSrc, fsSrc, attribLocations = null) {
-  const p = gl.createProgram();
+function program(
+  gl: WebGL2RenderingContext,
+  vsSrc: string,
+  fsSrc: string,
+  attribLocations: Record<string, number> | null = null,
+): WebGLProgram {
+  const p = gl.createProgram()!;
   gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vsSrc));
   gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fsSrc));
   if (attribLocations) {
@@ -183,15 +209,15 @@ function program(gl, vsSrc, fsSrc, attribLocations = null) {
   return p;
 }
 
-function makeFbo(gl, w, h) {
-  const tex = gl.createTexture();
+function makeFbo(gl: WebGL2RenderingContext, w: number, h: number): Fbo {
+  const tex = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  const fbo = gl.createFramebuffer();
+  const fbo = gl.createFramebuffer()!;
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
@@ -202,7 +228,7 @@ function makeFbo(gl, w, h) {
   return { tex, fbo, w, h };
 }
 
-function disposeFbo(gl, fbo) {
+function disposeFbo(gl: WebGL2RenderingContext, fbo: Fbo): void {
   gl.deleteFramebuffer(fbo.fbo);
   gl.deleteTexture(fbo.tex);
 }
@@ -210,8 +236,8 @@ function disposeFbo(gl, fbo) {
 // Choose FBO dimensions matching the canvas aspect exactly (so the present
 // pass never stretches). Default: short axis = FBO_SHORT. If that pushes the
 // long axis past FBO_LONG_MAX, shrink the short axis to keep aspect.
-function fboDimsForAspect(aspect) {
-  let w, h;
+function fboDimsForAspect(aspect: number): { w: number; h: number } {
+  let w: number, h: number;
   if (aspect >= 1) {
     h = FBO_SHORT;
     w = Math.round(h * aspect);
@@ -224,15 +250,15 @@ function fboDimsForAspect(aspect) {
   return { w: Math.max(1, w), h: Math.max(1, h) };
 }
 
-async function main() {
-  const orbitsMeta = await fetch('orbits.json').then(r => r.json());
+async function main(): Promise<void> {
+  const orbitsMeta: OrbitMeta[] = await fetch('orbits.json').then(r => r.json());
 
   // Build the candidate pool: each non-square orbit gets two entries
   // (original orientation + 90° CCW rotated) so wide orbits and tall
   // orbits both have a shot at fitting the viewport. Square-ish orbits
   // appear once, otherwise they'd be doubled-weighted relative to the
   // others (their rotated version looks identical).
-  const pool = [];
+  const pool: PoolEntry[] = [];
   for (const o of orbitsMeta) {
     pool.push({ ...o, rotated: false });
     if (Math.abs(Math.log(o.extent[0] / o.extent[1])) > 0.1) {
@@ -258,7 +284,7 @@ async function main() {
   });
   const total = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * total;
-  let orbit = pool[pool.length - 1];
+  let orbit: PoolEntry = pool[pool.length - 1];
   for (let i = 0; i < pool.length; i++) {
     r -= weights[i];
     if (r <= 0) { orbit = pool[i]; break; }
@@ -276,7 +302,7 @@ async function main() {
     }
   }
 
-  const canvas = document.getElementById('c');
+  const canvas = document.getElementById('c') as HTMLCanvasElement;
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, premultipliedAlpha: false });
   if (!gl) {
     console.error('WebGL 2 unavailable');
@@ -302,28 +328,28 @@ async function main() {
     -0.5,-0.5,  0.5,-0.5,  0.5, 0.5,
     -0.5,-0.5,  0.5, 0.5, -0.5, 0.5,
   ]);
-  const quadVbo = gl.createBuffer();
+  const quadVbo = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
   gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
 
   // Fullscreen VAO: shaders use gl_VertexID to synthesize positions, but
   // attribute 0 still needs to be enabled with a real buffer to keep the
   // GL fast path on macOS. The data is just ignored by the shader.
-  const fullscreenVao = gl.createVertexArray();
+  const fullscreenVao = gl.createVertexArray()!;
   gl.bindVertexArray(fullscreenVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-  const segmentVao = gl.createVertexArray();
+  const segmentVao = gl.createVertexArray()!;
   gl.bindVertexArray(segmentVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVbo);
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
-  let fboFront = null;
-  let fboBack = null;
+  let fboFront: Fbo | null = null;
+  let fboBack: Fbo | null = null;
 
   // ---- Camera (world → clip)
   const worldHalfSize = Math.max(orbit.extent[0], orbit.extent[1]) * (1 + FRAMING_MARGIN);
@@ -337,7 +363,7 @@ async function main() {
 
   // Trail thickness scales with the orbit so visual proportion stays constant.
   const TRAIL_RADIUS    = worldHalfSize * 0.15;   // bounding capsule — far enough out that emission has faded by the edge
-  const TRAIL_STRENGTH  = worldHalfSize * 0.0023; // tuned for the N_SUB sub-step polyline (more capsules per frame than before)
+  const TRAIL_STRENGTH  = worldHalfSize * 0.0023; // tuned for the N_SUB sub-step polyline
   // Head sizing is in CANVAS PIXELS — converted to world units on resize so
   // the visual size stays constant across orbits AND viewport sizes.
   const HEAD_NUCLEUS_PX = 3.5;     // tight bright pinpoint
@@ -346,7 +372,7 @@ async function main() {
   // Recompute camera + world extent: object-fit-contain. Whichever orbit
   // axis is more constrained relative to the canvas dictates the fit;
   // the other axis has headroom that the halos extend into.
-  function updateCamera(fboW, fboH) {
+  function updateCamera(fboW: number, fboH: number): void {
     const aspect = fboW / fboH;
     const exMargin = orbit.extent[0] * (1 + FRAMING_MARGIN);
     const eyMargin = orbit.extent[1] * (1 + FRAMING_MARGIN);
@@ -375,14 +401,14 @@ async function main() {
 
   const epoch = performance.now();
   let prevNow = epoch;
-  let hiddenAt = null;
+  let hiddenAt: number | null = null;
   let pausedDt = 0;
 
   // Catmull-Rom spline interpolation through 4 surrounding sample points.
   // Smooths out the polyline faceting that was visible during slingshots,
   // where consecutive samples are spaced too far apart for linear lerp to
   // hide the corners. The orbit is periodic so we wrap indices.
-  function pickPosition(timeMs, out) {
+  function pickPosition(timeMs: number, out: Float32Array): void {
     const N = orbit.sampleCount;
     const phase = (((timeMs - epoch - pausedDt) / (visualPeriodS * 1000.0)) % 1.0 + 1.0) % 1.0;
     const f = phase * N;
@@ -448,7 +474,7 @@ async function main() {
   gl.uniform1f(presentUniforms.uContrast, CONTRAST);
 
   // ---- Resize: canvas backing-store + FBO dimensions + camera projection.
-  function resize() {
+  function resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const cw = Math.max(1, Math.floor(window.innerWidth * dpr));
     const ch = Math.max(1, Math.floor(window.innerHeight * dpr));
@@ -458,10 +484,10 @@ async function main() {
     const aspect = cw / ch;
     const dims = fboDimsForAspect(aspect);
     if (!fboFront || fboFront.w !== dims.w || fboFront.h !== dims.h) {
-      if (fboFront) disposeFbo(gl, fboFront);
-      if (fboBack) disposeFbo(gl, fboBack);
-      fboFront = makeFbo(gl, dims.w, dims.h);
-      fboBack = makeFbo(gl, dims.w, dims.h);
+      if (fboFront) disposeFbo(gl!, fboFront);
+      if (fboBack) disposeFbo(gl!, fboBack);
+      fboFront = makeFbo(gl!, dims.w, dims.h);
+      fboBack = makeFbo(gl!, dims.w, dims.h);
     }
     updateCamera(dims.w, dims.h);
 
@@ -469,12 +495,12 @@ async function main() {
     // canvas-to-world ratio. Aspect-preserving so x and y agree.
     const worldPerPx = (2 * worldExtent[1]) / ch;
 
-    gl.useProgram(segmentProg);
-    gl.uniform4fv(segUniforms.uProj, proj);
-    gl.useProgram(presentProg);
-    gl.uniform2fv(presentUniforms.uWorldExtent, worldExtent);
-    gl.uniform1f(presentUniforms.uNucleus, HEAD_NUCLEUS_PX * worldPerPx);
-    gl.uniform1f(presentUniforms.uHalo, HEAD_HALO_PX * worldPerPx);
+    gl!.useProgram(segmentProg);
+    gl!.uniform4fv(segUniforms.uProj, proj);
+    gl!.useProgram(presentProg);
+    gl!.uniform2fv(presentUniforms.uWorldExtent, worldExtent);
+    gl!.uniform1f(presentUniforms.uNucleus, HEAD_NUCLEUS_PX * worldPerPx);
+    gl!.uniform1f(presentUniforms.uHalo, HEAD_HALO_PX * worldPerPx);
   }
   resize();
   window.addEventListener('resize', resize);
@@ -491,7 +517,7 @@ async function main() {
   });
 
   // ---- Render loop
-  function frame(now) {
+  function frame(now: number): void {
     if (document.hidden) {
       requestAnimationFrame(frame);
       return;
@@ -512,46 +538,46 @@ async function main() {
     prevNow = now;
 
     // 1. Fade + diffusion pass: fboFront × uFade (with cross blur) → fboBack
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fboBack.fbo);
-    gl.viewport(0, 0, fboBack.w, fboBack.h);
-    gl.disable(gl.BLEND);
-    gl.useProgram(fadeProg);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, fboFront.tex);
-    gl.uniform1i(fadeUniforms.uPrev, 0);
-    gl.uniform1f(fadeUniforms.uFade, Math.exp(-FADE_TAU * dtSec));
-    gl.uniform2f(fadeUniforms.uTexel, 1 / fboBack.w, 1 / fboBack.h);
-    gl.bindVertexArray(fullscreenVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, fboBack!.fbo);
+    gl!.viewport(0, 0, fboBack!.w, fboBack!.h);
+    gl!.disable(gl!.BLEND);
+    gl!.useProgram(fadeProg);
+    gl!.activeTexture(gl!.TEXTURE0);
+    gl!.bindTexture(gl!.TEXTURE_2D, fboFront!.tex);
+    gl!.uniform1i(fadeUniforms.uPrev, 0);
+    gl!.uniform1f(fadeUniforms.uFade, Math.exp(-FADE_TAU * dtSec));
+    gl!.uniform2f(fadeUniforms.uTexel, 1 / fboBack!.w, 1 / fboBack!.h);
+    gl!.bindVertexArray(fullscreenVao);
+    gl!.drawArrays(gl!.TRIANGLES, 0, 3);
 
     // 2. Trail segment pass: additive into fboBack. We draw N_SUB short
     //    capsules per body so high-curvature motion renders as a smooth
     //    polyline rather than a single straight chord.
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    gl.useProgram(segmentProg);
-    gl.bindVertexArray(segmentVao);
-    gl.uniform1f(segUniforms.uRadius, TRAIL_RADIUS);
-    gl.uniform1f(segUniforms.uStrength, TRAIL_STRENGTH);
-    gl.uniform1f(segUniforms.uExponent, 2.0);
+    gl!.enable(gl!.BLEND);
+    gl!.blendFunc(gl!.ONE, gl!.ONE);
+    gl!.useProgram(segmentProg);
+    gl!.bindVertexArray(segmentVao);
+    gl!.uniform1f(segUniforms.uRadius, TRAIL_RADIUS);
+    gl!.uniform1f(segUniforms.uStrength, TRAIL_STRENGTH);
+    gl!.uniform1f(segUniforms.uExponent, 2.0);
     for (let s = 0; s < N_SUB; s++) {
-      gl.uniform2fv(segUniforms.uPrev, subPositions.subarray(s * 6, (s + 1) * 6));
-      gl.uniform2fv(segUniforms.uCurr, subPositions.subarray((s + 1) * 6, (s + 2) * 6));
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, 3);
+      gl!.uniform2fv(segUniforms.uPrev, subPositions.subarray(s * 6, (s + 1) * 6));
+      gl!.uniform2fv(segUniforms.uCurr, subPositions.subarray((s + 1) * 6, (s + 2) * 6));
+      gl!.drawArraysInstanced(gl!.TRIANGLES, 0, 6, 3);
     }
 
     // 3. Present: trail FBO + analytic 1/r^2 head halos, summed in linear
     //    HDR and tonemapped once. Fills the entire canvas viewport.
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.disable(gl.BLEND);
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.useProgram(presentProg);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, fboBack.tex);
-    gl.uniform1i(presentUniforms.uFbo, 0);
-    gl.uniform2fv(presentUniforms.uPos, currPos);
-    gl.bindVertexArray(fullscreenVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
+    gl!.disable(gl!.BLEND);
+    gl!.viewport(0, 0, canvas.width, canvas.height);
+    gl!.useProgram(presentProg);
+    gl!.activeTexture(gl!.TEXTURE0);
+    gl!.bindTexture(gl!.TEXTURE_2D, fboBack!.tex);
+    gl!.uniform1i(presentUniforms.uFbo, 0);
+    gl!.uniform2fv(presentUniforms.uPos, currPos);
+    gl!.bindVertexArray(fullscreenVao);
+    gl!.drawArrays(gl!.TRIANGLES, 0, 3);
 
     // 4. Swap FBOs.
     [fboFront, fboBack] = [fboBack, fboFront];

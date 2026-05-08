@@ -4,10 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Third Orbit Ltd.</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Unica+One&display=swap" rel="stylesheet">
 <style>
+  @font-face {
+    font-family: 'Unica One';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/unica-one.woff2') format('woff2');
+  }
   html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; position: absolute; inset: 0; }
   .title {
@@ -54,6 +58,6 @@
     });
   });
 </script>
-<script type="module" src="3body.js"></script>
+<script type="module" src="./3body.ts"></script>
 </body>
 </html>

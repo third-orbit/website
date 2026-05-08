@@ -4,13 +4,13 @@ Pre-compute three-body orbit positions for the WebGL viewer.
 Reads init_conditions.json, integrates each periodic orbit at high precision,
 samples it on a uniform time grid, and writes:
 
-  web/orbits.json          — index + per-orbit metadata + binary file path
-  web/orbits/<slug>.bin    — one little-endian float32 file per orbit
+  static/public/orbits.json          — index + per-orbit metadata + binary path
+  static/public/orbits/<slug>.bin    — one little-endian float32 file per orbit
 
 Splitting the binary per orbit lets the page only download the one orbit it
-picks on load, instead of fetching all 16.
+picks on load, instead of fetching all of them up front.
 
-Run from the repo root:  python precompute.py
+Run from the repo root:  python precompute/precompute.py
 """
 
 import json
@@ -89,17 +89,15 @@ def slugify(name):
 
 
 def main():
-    repo_root = Path(__file__).parent
-    init_path = repo_root / "init_conditions.json"
-    out_dir = repo_root / "web"
+    script_dir = Path(__file__).parent
+    repo_root = script_dir.parent
+    init_path = script_dir / "init_conditions.json"
+    out_dir = repo_root / "static" / "public"
     bin_dir = out_dir / "orbits"
     bin_dir.mkdir(parents=True, exist_ok=True)
 
-    # Clean up the previous monolithic file and any stale per-orbit bins so
-    # renames between runs don't leave orphans.
-    old_monolith = out_dir / "orbits.bin"
-    if old_monolith.exists():
-        old_monolith.unlink()
+    # Clean up any stale per-orbit bins from previous runs so renames don't
+    # leave orphans.
     for f in bin_dir.glob("*.bin"):
         f.unlink()
 
