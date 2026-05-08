@@ -210,21 +210,6 @@
     "file": "orbits/broucke-a10.bin"
   },
   {
-    "name": "googles",
-    "period": 10.466818,
-    "sampleCount": 2048,
-    "center": [
-      -3.6408209780347534e-10,
-      9.928650783475046e-12
-    ],
-    "extent": [
-      1.0497245788574219,
-      0.738248884677887
-    ],
-    "avgStartSpeed": 0.20350041800011673,
-    "file": "orbits/googles.bin"
-  },
-  {
     "name": "Broucke A7",
     "period": 12.055859,
     "sampleCount": 2048,

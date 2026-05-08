@@ -215,11 +215,52 @@ function fboDimsForAspect(aspect) {
 
 async function main() {
   const orbitsMeta = await fetch('orbits.json').then(r => r.json());
-  const orbit = orbitsMeta[Math.floor(Math.random() * orbitsMeta.length)];
+
+  // Each orbit goes into the pool twice: original orientation and 90° CCW
+  // rotated. Rotating swaps the bounding-box axes so wide orbits become
+  // tall and vice versa, doubling the chance of finding one that fits the
+  // viewport. The actual sample rotation happens client-side after fetch.
+  const pool = [];
+  for (const o of orbitsMeta) {
+    pool.push({ ...o, rotated: false });
+    pool.push({
+      ...o,
+      name: o.name + ' (rotated)',
+      center: [-o.center[1], o.center[0]],
+      extent: [o.extent[1], o.extent[0]],
+      rotated: true,
+    });
+  }
+
+  // Bias the random pick toward orbits whose bounding-box aspect matches
+  // the viewport. Distance is measured in log-aspect space (so 2:1 and
+  // 1:2 are equivalently "off") with a Gaussian falloff. Bigger sigma =
+  // softer bias; smaller = stricter aspect matching.
+  const viewLogAspect = Math.log(window.innerWidth / window.innerHeight);
+  const sigma = 0.5;
+  const weights = pool.map(o => {
+    const diff = Math.log(o.extent[0] / o.extent[1]) - viewLogAspect;
+    return Math.exp(-(diff * diff) / (2 * sigma * sigma));
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  let orbit = pool[pool.length - 1];
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) { orbit = pool[i]; break; }
+  }
   console.log('Orbit:', orbit.name);
 
   const binBuf = await fetch(orbit.file).then(r => r.arrayBuffer());
   const samples = new Float32Array(binBuf);
+  if (orbit.rotated) {
+    // 90° CCW: (x, y) → (-y, x). Samples are tightly packed [r1x, r1y, ...].
+    for (let i = 0; i < samples.length; i += 2) {
+      const x = samples[i];
+      samples[i]     = -samples[i + 1];
+      samples[i + 1] =  x;
+    }
+  }
 
   const canvas = document.getElementById('c');
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, premultipliedAlpha: false });
